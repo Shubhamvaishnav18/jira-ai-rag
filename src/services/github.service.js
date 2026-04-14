@@ -44,4 +44,68 @@ async function getFileContent(targetRepo, filePath) {
     }
 }
 
-module.exports = { getRepoTree, getFileContent };
+async function createPullRequest(repoOwner, repoName, branchName, filesToUpdate, prTitle, prBody) {
+    console.log(`🚀 Creating PR for ${branchName}...`);
+    
+    try {
+        const { data: refData } = await octokit.request("GET /repos/{owner}/{repo}/git/ref/{ref}", {
+            owner: repoOwner,
+            repo: repoName,
+            ref: "heads/main"
+        });
+        const baseSha = refData.object.sha;
+
+        await octokit.request("POST /repos/{owner}/{repo}/git/refs", {
+            owner: repoOwner,
+            repo: repoName,
+            ref: `refs/heads/${branchName}`,
+            sha: baseSha
+        });
+
+        const tree = filesToUpdate.map(file => ({
+            path: file.path,
+            mode: "100644", 
+            type: "blob",
+            content: file.new_content
+        }));
+
+        const { data: treeData } = await octokit.request("POST /repos/{owner}/{repo}/git/trees", {
+            owner: repoOwner,
+            repo: repoName,
+            base_tree: baseSha,
+            tree: tree
+        });
+
+        const { data: commitData } = await octokit.request("POST /repos/{owner}/{repo}/git/commits", {
+            owner: repoOwner,
+            repo: repoName,
+            message: prTitle,
+            tree: treeData.sha,
+            parents: [baseSha]
+        });
+
+        await octokit.request("PATCH /repos/{owner}/{repo}/git/refs/{ref}", {
+            owner: repoOwner,
+            repo: repoName,
+            ref: `heads/${branchName}`,
+            sha: commitData.sha
+        });
+
+        const { data: prData } = await octokit.request("POST /repos/{owner}/{repo}/pulls", {
+            owner: repoOwner,
+            repo: repoName,
+            title: prTitle,
+            head: branchName,
+            base: "main",
+            body: prBody
+        });
+
+        return prData.html_url; 
+        
+    } catch (error) {
+        console.error("❌ GitHub API Error:", error.message);
+        throw error;
+    }
+}
+
+module.exports = { getRepoTree, getFileContent, createPullRequest };

@@ -16,4 +16,33 @@ async function postCommentToJira(ticketId, comment) {
     }
 }
 
-module.exports = { postCommentToJira };
+async function transitionIssue(issueKey, transitionId) {
+    const domain = process.env.JIRA_URL;
+    const email = process.env.JIRA_EMAIL;
+    const token = process.env.JIRA_API_TOKEN;
+
+    const auth = Buffer.from(`${email}:${token}`).toString('base64');
+
+    const response = await fetch(`${domain}/rest/api/2/issue/${issueKey}/transitions`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Basic ${auth}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            transition: {
+                id: transitionId
+            }
+        })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to transition Jira ticket: ${response.status} - ${errorText}`);
+    }
+
+    return true;
+}
+
+module.exports = { postCommentToJira, transitionIssue };

@@ -2,8 +2,13 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { Pinecone } = require('@pinecone-database/pinecone');
 const config = require('../config');
 
+const Anthropic = require('@anthropic-ai/sdk');
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
 const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-2-preview" });
 
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
@@ -81,4 +86,51 @@ Create and work on this branch: \`${branchName}\`
     }
 }
 
-module.exports = { searchVectorDB, generateActionPlan };
+async function analyzeTicketAndCode(title, description, codeContext) {
+    console.log("🧠 Claude AI is analyzing the ticket and codebase...");
+
+    const systemPrompt = `
+        You are an Expert Software Developer. 
+        Your task is to act like a human. 
+        1. If the requirement is unclear or you need more info, ask a doubt.
+        2. If the requirement is clear, write the EXACT modified code for the files.
+
+        You MUST respond ONLY in valid JSON format matching this structure perfectly. Do not include any markdown formatting like \`\`\`json or regular text outside the JSON:
+        {
+            "action": "doubt" | "code",
+            "message_or_doubt": "Write your doubt here, or a brief description of what you fixed",
+            "branch_name": "feat/jira-123",
+            "files_to_update": [
+                {
+                    "path": "src/components/Header.js",
+                    "new_content": "// The complete modified code here"
+                }
+            ]
+        }
+    `;
+
+    const userMessage = `Jira Ticket: ${title}\nDescription: ${description}\nRetrieved Codebase Context: ${codeContext}`;
+
+    try {
+        const response = await anthropic.messages.create({
+            model: "anthropic/claude-opus-4.5", 
+            max_tokens: 4000,
+            temperature: 0.2, 
+            system: systemPrompt,
+            messages: [
+                { role: "user", content: userMessage }
+            ]
+        });
+
+        const responseText = response.content[0].text;
+        const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        return JSON.parse(cleanJsonString);
+
+    } catch (error) {
+        console.error("❌ Claude AI API Error:", error.message);
+        throw error;
+    }
+}
+
+module.exports = { searchVectorDB, generateActionPlan, analyzeTicketAndCode };
