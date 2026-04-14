@@ -91,21 +91,19 @@ async function analyzeTicketAndCode(title, description, codeContext) {
 
     const systemPrompt = `
         You are an Expert Software Developer. 
-        Your task is to act like a human. 
-        1. If the requirement is unclear or you need more info, ask a doubt.
-        2. If the requirement is clear, write the EXACT modified code for the files.
+        Your task is to act like a human engineer. 
+        1. If requirements are unclear, ask a doubt.
+        2. If clear, write EXACT modified code.
 
-        You MUST respond ONLY in valid JSON format matching this structure perfectly. Do not include any markdown formatting like \`\`\`json or regular text outside the JSON:
+        IMPORTANT: Your entire response MUST be a single JSON object. 
+        Do not include any conversational text before or after the JSON.
+        
+        Format:
         {
             "action": "doubt" | "code",
-            "message_or_doubt": "Write your doubt here, or a brief description of what you fixed",
-            "branch_name": "feat/jira-123",
-            "files_to_update": [
-                {
-                    "path": "src/components/Header.js",
-                    "new_content": "// The complete modified code here"
-                }
-            ]
+            "message_or_doubt": "brief summary",
+            "branch_name": "feat/description",
+            "files_to_update": [{"path": "string", "new_content": "string"}]
         }
     `;
 
@@ -113,19 +111,31 @@ async function analyzeTicketAndCode(title, description, codeContext) {
 
     try {
         const response = await anthropic.messages.create({
-            model: "anthropic/claude-opus-4.5", 
+            model: "claude-opus-4-6",
             max_tokens: 4000,
-            temperature: 0.2, 
+            temperature: 0, 
             system: systemPrompt,
-            messages: [
-                { role: "user", content: userMessage }
-            ]
+            messages: [{ role: "user", content: userMessage }]
         });
 
         const responseText = response.content[0].text;
-        const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        
-        return JSON.parse(cleanJsonString);
+        console.log("📝 Raw AI Response Received.");
+
+        try {
+            const startIdx = responseText.indexOf('{');
+            const endIdx = responseText.lastIndexOf('}');
+
+            if (startIdx === -1 || endIdx === -1) {
+                throw new Error("AI response did not contain any JSON object.");
+            }
+
+            const jsonString = responseText.substring(startIdx, endIdx + 1);
+            return JSON.parse(jsonString);
+
+        } catch (parseError) {
+            console.error("❌ JSON Parse Failed. Raw Text:", responseText);
+            throw new Error("AI response was not in a valid JSON format.");
+        }
 
     } catch (error) {
         console.error("❌ Claude AI API Error:", error.message);

@@ -17,48 +17,42 @@ async function handleJiraWebhook(req, res) {
         
         const assigneeName = issue.fields.assignee ? issue.fields.assignee.displayName : "Unassigned";
 
-        console.log(`\n🔔 Webhook Triggered: [${ticketId}] -> Assigned to: ${assigneeName}`);
+        if (assigneeName !== "Shubham") {
+            console.log(`Skipping: Ticket [${ticketId}] is assigned to ${assigneeName}, not the AI.`);
+            return;
+        }
 
-        //for ai developer
-        if (assigneeName === "Shubham") {
-            console.log("🚀 Starting AUTONOMOUS Flow (Code & PR Generation)...");
+        console.log(`\n🤖 AI AGENT TRIGGERED: [${ticketId}]`);
+        console.log("🚀 Starting AUTONOMOUS Flow (Code & PR Generation)...");
 
-            await jiraService.transitionIssue(ticketId, process.env.JIRA_TRANSITION_IN_PROGRESS_ID);
-
-            const codeContext = await aiService.searchVectorDB(title, description, targetRepo);
-            
-            const aiDecision = await aiService.analyzeTicketAndCode(title, description, codeContext);
-
-            if (aiDecision.action === "doubt") {
-                await jiraService.postCommentToJira(ticketId, `🤔 *Question from AI Developer:*\n${aiDecision.message_or_doubt}`);
-                return;
-            }
-
-            if (aiDecision.action === "code") {
-                const prLink = await githubService.createPullRequest(
-                    process.env.GITHUB_OWNER, targetRepo, aiDecision.branch_name, 
-                    aiDecision.files_to_update, title, aiDecision.message_or_doubt
-                );
-
-                const finalComment = `*✅ Work Completed by AI!*\n*Branch:* \`${aiDecision.branch_name}\`\n*PR Link:* ${prLink}\n\n*Details:* ${aiDecision.message_or_doubt}`;
-                await jiraService.postCommentToJira(ticketId, finalComment);
-                await jiraService.transitionIssue(ticketId, process.env.JIRA_TRANSITION_DEV_COMPLETE_ID);
-                console.log(`🎉 Autonomous Flow Complete! PR: ${prLink}`);
-            }
-        } 
+        await jiraService.transitionIssue(ticketId, process.env.JIRA_TRANSITION_IN_PROGRESS_ID);
+        const codeContext = await aiService.searchVectorDB(title, description, targetRepo);
         
-        // for human developer
-        // else {
-        //     console.log("👨‍💻 Starting ASSISTANT Flow (Action Plan Only)...");
+        const aiDecision = await aiService.analyzeTicketAndCode(title, description, codeContext);
+
+        if (aiDecision.action === "doubt") {
+            await jiraService.postCommentToJira(ticketId, `🤔 *Question from AI Developer:*\n${aiDecision.message_or_doubt}`);
+            console.log(`❓ Doubt posted for [${ticketId}]`);
+            return;
+        }
+
+        if (aiDecision.action === "code") {
+            const prLink = await githubService.createPullRequest(
+                process.env.GITHUB_OWNER, 
+                targetRepo, 
+                aiDecision.branch_name, 
+                aiDecision.files_to_update, 
+                title, 
+                aiDecision.message_or_doubt
+            );
+
+            const finalComment = `*✅ Work Completed by AI!*\n*Branch:* \`${aiDecision.branch_name}\`\n*PR Link:* ${prLink}\n\n*Details:* ${aiDecision.message_or_doubt}`;
+            await jiraService.postCommentToJira(ticketId, finalComment);
             
-        //     const codeContext = await aiService.searchVectorDB(title, description, targetRepo);
-
-        //     const branchName = `feat/${ticketId.toLowerCase()}`;
-        //     const actionPlan = await aiService.generateActionPlan(title, description, branchName, codeContext);
-
-        //     await jiraService.postCommentToJira(ticketId, actionPlan);
-        //     console.log(`✅ Assistant Flow Complete! Action plan posted for ${assigneeName}.`);
-        // }
+            await jiraService.transitionIssue(ticketId, process.env.JIRA_TRANSITION_DEV_COMPLETE_ID);
+            
+            console.log(`🎉 Autonomous Flow Complete! PR: ${prLink}`);
+        }
 
     } catch (error) {
         console.error("❌ Webhook Processing Failed:", error);
